@@ -5,7 +5,7 @@ from PIL import Image, ImageDraw
 
 st.set_page_config(page_title="CATS Pricing Guide", layout="wide")
 
-FILE_PATH = "/Users/animesh/Downloads/CAA Pricing Guide DC PA 01012025 to 02282026 Cleaned.xlsx"
+FILE_PATH = "CAA Pricing Guide DC PA 01012025 to 02282026 Cleaned.xlsx"
 SHEET_NAME = "Worksheet"
 
 import base64
