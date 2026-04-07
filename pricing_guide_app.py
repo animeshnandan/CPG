@@ -243,14 +243,11 @@ def extract_engine_dtc_block(text):
     if not text:
         return ""
 
-    # Grab only the code line after ENGINE: CHECK ENGINE LIGHT ON
-    pattern = r'ENGINE:\s*CHECK ENGINE LIGHT ON\s*([A-Z0-9,]+)'
+    pattern = r'ENGINE:\s*CHECK ENGINE LIGHT ON\s*([^\n]+)'
     match = re.search(pattern, text, flags=re.IGNORECASE)
     if match:
-        codes = match.group(1).strip(" ,")
-        return codes
+        return match.group(1).strip(" ,")
 
-    # Fallback for older style "Check Engine Light: ..."
     pattern2 = r'CHECK ENGINE LIGHT:\s*([^\n]+)'
     match2 = re.search(pattern2, text, flags=re.IGNORECASE)
     if match2:
@@ -263,23 +260,27 @@ def remove_engine_dtc_block(text):
     if not text:
         return ""
 
-    # Remove ENGINE: CHECK ENGINE LIGHT ON P0010,... completely
-    pattern = r'ENGINE:\s*CHECK ENGINE LIGHT ON\s*[A-Z0-9,]+\s*'
-    cleaned = re.sub(pattern, "", text, flags=re.IGNORECASE)
-
-    # Remove legacy "Check Engine Light: ..." line if present
-    pattern2 = r'CHECK ENGINE LIGHT:\s*[^\n]+\s*'
-    cleaned = re.sub(pattern2, "", cleaned, flags=re.IGNORECASE)
-
-    cleaned = re.sub(r'\s{2,}', ' ', cleaned).strip(" -:;,\n\t")
+    cleaned = re.sub(
+        r'ENGINE:\s*CHECK ENGINE LIGHT ON\s*[^\n]+\n?',
+        '',
+        text,
+        flags=re.IGNORECASE
+    )
+    cleaned = re.sub(
+        r'CHECK ENGINE LIGHT:\s*[^\n]+\n?',
+        '',
+        cleaned,
+        flags=re.IGNORECASE
+    )
+    cleaned = re.sub(r'\n{2,}', '\n', cleaned).strip()
     return cleaned
 
-def reorder_condition_report(text):
+def format_condition_report_block(text):
     text = clean_text_value(text)
     if not text:
         return ""
 
-    # Split into label/value pairs by colon
+    # Split into "LABEL: value" pairs and put each on its own line
     parts = [p.strip() for p in text.split(":") if p.strip()]
     pairs = []
 
@@ -293,19 +294,25 @@ def reorder_condition_report(text):
     if not pairs:
         return text
 
-    # CAR first, everything else after
-    car_pairs = [f"{label}: {value}" for label, value in pairs if label.upper() == "CAR"]
-    other_pairs = [f"{label}: {value}" for label, value in pairs if label.upper() != "CAR"]
+    car_lines = [f"{label}: {value}" for label, value in pairs if label.upper() == "CAR"]
+    other_lines = [f"{label}: {value}" for label, value in pairs if label.upper() != "CAR"]
 
-    return "\n".join(car_pairs + other_pairs)
+    return "\n".join(car_lines + other_lines)
 
-def render_text_block(title, value):
+def render_text_box(title, value, key, height=140):
     value = clean_text_value(value)
     if not value:
         return
 
     st.markdown(f"**{title}:**")
-    st.text(value)
+    st.text_area(
+        label=title,
+        value=value,
+        height=height,
+        key=key,
+        disabled=True,
+        label_visibility="collapsed",
+    )
 
 df = load_data()
 
@@ -394,18 +401,42 @@ def show_vehicle_popup():
 
     with right:
         condition_report_raw = current_row.get("Condition Report")
+
         condition_report_clean = remove_engine_dtc_block(condition_report_raw)
-        condition_report_ordered = reorder_condition_report(condition_report_clean)
+        condition_report_formatted = format_condition_report_block(condition_report_clean)
 
         check_engine_light = extract_engine_dtc_block(condition_report_raw)
-        if not check_engine_light:
-            check_engine_light = extract_check_engine_light(condition_report_raw)
 
-        render_text_block("Condition Report", condition_report_ordered)
-        render_text_block("Carfax Notes", current_row.get("Carfax notes"))
-        render_text_block("Title Announcements", current_row.get("Title Announcements"))
-        render_text_block("Auction Announcements", current_row.get("Auction Announcements"))
-        render_text_block("Check Engine Light", check_engine_light)
+        render_text_box(
+            "Condition Report",
+            condition_report_formatted,
+            key=f"popup_condition_report_{st.session_state.viewer_index}",
+            height=220
+        )
+        render_text_box(
+            "Carfax Notes",
+            current_row.get("Carfax notes"),
+            key=f"popup_carfax_{st.session_state.viewer_index}",
+            height=90
+        )
+        render_text_box(
+            "Title Announcements",
+            current_row.get("Title Announcements"),
+            key=f"popup_title_{st.session_state.viewer_index}",
+            height=90
+        )
+        render_text_box(
+            "Auction Announcements",
+            current_row.get("Auction Announcements"),
+            key=f"popup_auction_{st.session_state.viewer_index}",
+            height=110
+        )
+        render_text_box(
+            "Check Engine Light",
+            check_engine_light,
+            key=f"popup_check_engine_{st.session_state.viewer_index}",
+            height=90
+        )
 
 st.title("CATS Pricing Guide")
 
