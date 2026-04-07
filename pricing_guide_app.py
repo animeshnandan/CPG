@@ -243,15 +243,16 @@ def extract_engine_dtc_block(text):
     if not text:
         return ""
 
-    pattern = r'ENGINE:\s*CHECK ENGINE LIGHT ON\s*([^\n]+)'
-    match = re.search(pattern, text, flags=re.IGNORECASE)
+    # Capture the ENGINE section and keep everything after it until the next all-caps label
+    pattern = r'ENGINE:\s*CHECK ENGINE LIGHT ON\s*(.*?)(?=\s+[A-Z][A-Z /]+:|$)'
+    match = re.search(pattern, text, flags=re.IGNORECASE | re.DOTALL)
     if match:
-        return match.group(1).strip(" ,")
+        return "CHECK ENGINE LIGHT ON " + match.group(1).strip()
 
-    pattern2 = r'CHECK ENGINE LIGHT:\s*([^\n]+)'
-    match2 = re.search(pattern2, text, flags=re.IGNORECASE)
+    pattern2 = r'CHECK ENGINE LIGHT:\s*(.*)'
+    match2 = re.search(pattern2, text, flags=re.IGNORECASE | re.DOTALL)
     if match2:
-        return match2.group(1).strip(" ,")
+        return match2.group(1).strip()
 
     return ""
 
@@ -260,19 +261,13 @@ def remove_engine_dtc_block(text):
     if not text:
         return ""
 
-    cleaned = re.sub(
-        r'ENGINE:\s*CHECK ENGINE LIGHT ON\s*[^\n]+\n?',
-        '',
-        text,
-        flags=re.IGNORECASE
-    )
-    cleaned = re.sub(
-        r'CHECK ENGINE LIGHT:\s*[^\n]+\n?',
-        '',
-        cleaned,
-        flags=re.IGNORECASE
-    )
-    cleaned = re.sub(r'\n{2,}', '\n', cleaned).strip()
+    pattern = r'ENGINE:\s*CHECK ENGINE LIGHT ON\s*.*?(?=\s+[A-Z][A-Z /]+:|$)'
+    cleaned = re.sub(pattern, "", text, flags=re.IGNORECASE | re.DOTALL)
+
+    pattern2 = r'CHECK ENGINE LIGHT:\s*.*?(?=\s+[A-Z][A-Z /]+:|$)'
+    cleaned = re.sub(pattern2, "", cleaned, flags=re.IGNORECASE | re.DOTALL)
+
+    cleaned = re.sub(r'\s{2,}', ' ', cleaned).strip(" -:;,\n\t")
     return cleaned
 
 def format_condition_report_block(text):
@@ -280,24 +275,25 @@ def format_condition_report_block(text):
     if not text:
         return ""
 
-    # Split into "LABEL: value" pairs and put each on its own line
-    parts = [p.strip() for p in text.split(":") if p.strip()]
-    pairs = []
+    # Match "LABEL: value" where the next label is another all-caps phrase followed by colon
+    pattern = r'([A-Z][A-Z /]+?):\s*(.*?)(?=\s+[A-Z][A-Z /]+?:|$)'
+    matches = re.findall(pattern, text, flags=re.DOTALL)
 
-    i = 0
-    while i < len(parts) - 1:
-        label = parts[i]
-        value = parts[i + 1]
-        pairs.append((label, value))
-        i += 2
-
-    if not pairs:
+    if not matches:
         return text
 
-    car_lines = [f"{label}: {value}" for label, value in pairs if label.upper() == "CAR"]
-    other_lines = [f"{label}: {value}" for label, value in pairs if label.upper() != "CAR"]
+    pairs = []
+    for label, value in matches:
+        label = label.strip()
+        value = re.sub(r'\s+', ' ', value).strip()
+        if value:
+            pairs.append((label, value))
 
-    return "\n".join(car_lines + other_lines)
+    # Put CAR first
+    car_pairs = [f"{label}: {value}" for label, value in pairs if label.upper() == "CAR"]
+    other_pairs = [f"{label}: {value}" for label, value in pairs if label.upper() != "CAR"]
+
+    return "\n".join(car_pairs + other_pairs)
 
 def render_text_box(title, value, key, height=140):
     value = clean_text_value(value)
@@ -310,7 +306,6 @@ def render_text_box(title, value, key, height=140):
         value=value,
         height=height,
         key=key,
-        disabled=True,
         label_visibility="collapsed",
     )
 
@@ -411,7 +406,7 @@ def show_vehicle_popup():
             "Condition Report",
             condition_report_formatted,
             key=f"popup_condition_report_{st.session_state.viewer_index}",
-            height=220
+            height=260
         )
         render_text_box(
             "Carfax Notes",
