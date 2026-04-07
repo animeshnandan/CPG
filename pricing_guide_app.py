@@ -228,25 +228,84 @@ def clean_text_value(text):
 
     return text
 
-def remove_check_engine_from_condition_report(text):
+import re
+
+def clean_text_value(text):
+    if pd.isna(text):
+        return ""
+    text = str(text).strip()
+    if text.lower() == "none":
+        return ""
+    return text
+
+def extract_engine_dtc_block(text):
     text = clean_text_value(text)
     if not text:
         return ""
 
-    upper_text = text.upper()
-    marker = "CHECK ENGINE LIGHT:"
-    if marker in upper_text:
-        idx = upper_text.find(marker)
-        return text[:idx].strip(" -:;,")
-    return text
+    # Grab only the code line after ENGINE: CHECK ENGINE LIGHT ON
+    pattern = r'ENGINE:\s*CHECK ENGINE LIGHT ON\s*([A-Z0-9,]+)'
+    match = re.search(pattern, text, flags=re.IGNORECASE)
+    if match:
+        codes = match.group(1).strip(" ,")
+        return codes
 
-def render_text_section(title, value):
+    # Fallback for older style "Check Engine Light: ..."
+    pattern2 = r'CHECK ENGINE LIGHT:\s*([^\n]+)'
+    match2 = re.search(pattern2, text, flags=re.IGNORECASE)
+    if match2:
+        return match2.group(1).strip(" ,")
+
+    return ""
+
+def remove_engine_dtc_block(text):
+    text = clean_text_value(text)
+    if not text:
+        return ""
+
+    # Remove ENGINE: CHECK ENGINE LIGHT ON P0010,... completely
+    pattern = r'ENGINE:\s*CHECK ENGINE LIGHT ON\s*[A-Z0-9,]+\s*'
+    cleaned = re.sub(pattern, "", text, flags=re.IGNORECASE)
+
+    # Remove legacy "Check Engine Light: ..." line if present
+    pattern2 = r'CHECK ENGINE LIGHT:\s*[^\n]+\s*'
+    cleaned = re.sub(pattern2, "", cleaned, flags=re.IGNORECASE)
+
+    cleaned = re.sub(r'\s{2,}', ' ', cleaned).strip(" -:;,\n\t")
+    return cleaned
+
+def reorder_condition_report(text):
+    text = clean_text_value(text)
+    if not text:
+        return ""
+
+    # Split into label/value pairs by colon
+    parts = [p.strip() for p in text.split(":") if p.strip()]
+    pairs = []
+
+    i = 0
+    while i < len(parts) - 1:
+        label = parts[i]
+        value = parts[i + 1]
+        pairs.append((label, value))
+        i += 2
+
+    if not pairs:
+        return text
+
+    # CAR first, everything else after
+    car_pairs = [f"{label}: {value}" for label, value in pairs if label.upper() == "CAR"]
+    other_pairs = [f"{label}: {value}" for label, value in pairs if label.upper() != "CAR"]
+
+    return "\n".join(car_pairs + other_pairs)
+
+def render_text_block(title, value):
     value = clean_text_value(value)
     if not value:
         return
 
     st.markdown(f"**{title}:**")
-    st.write(value)
+    st.text(value)
 
 df = load_data()
 
@@ -331,22 +390,22 @@ def show_vehicle_popup():
             if field in current_display:
                 info_rows.append({"Field": field, "Value": current_display[field]})
 
-        st.dataframe(
-            pd.DataFrame(info_rows),
-            use_container_width=True,
-            hide_index=True
-        )
+        st.table(pd.DataFrame(info_rows).style.hide(axis="index"))
 
     with right:
         condition_report_raw = current_row.get("Condition Report")
-        condition_report_clean = remove_check_engine_from_condition_report(condition_report_raw)
-        check_engine_light = extract_check_engine_light(condition_report_raw)
+        condition_report_clean = remove_engine_dtc_block(condition_report_raw)
+        condition_report_ordered = reorder_condition_report(condition_report_clean)
 
-        render_text_section("Condition Notes", condition_report_clean)
-        render_text_section("Carfax Notes", current_row.get("Carfax notes"))
-        render_text_section("Title Announcements", current_row.get("Title Announcements"))
-        render_text_section("Auction Announcements", current_row.get("Auction Announcements"))
-        render_text_section("Check Engine Light", check_engine_light)
+        check_engine_light = extract_engine_dtc_block(condition_report_raw)
+        if not check_engine_light:
+            check_engine_light = extract_check_engine_light(condition_report_raw)
+
+        render_text_block("Condition Report", condition_report_ordered)
+        render_text_block("Carfax Notes", current_row.get("Carfax notes"))
+        render_text_block("Title Announcements", current_row.get("Title Announcements"))
+        render_text_block("Auction Announcements", current_row.get("Auction Announcements"))
+        render_text_block("Check Engine Light", check_engine_light)
 
 st.title("CATS Pricing Guide")
 
