@@ -36,6 +36,7 @@ def reset_all_filters():
     st.session_state["filter_model"] = []
     st.session_state["filter_trim"] = []
     st.session_state["filter_status"] = []
+    st.session_state["filter_stock_prefix"] = []
 
     # Range fields
     st.session_state["filter_mileage_start"] = 0
@@ -93,6 +94,8 @@ def load_data():
     if "Stock Number" in df.columns:
         stock = df["Stock Number"].where(df["Stock Number"].notna(), "").astype(str).str.strip()
         df["Stock Number"] = stock
+        df["Stock Prefix"] = stock.str[:3].str.upper()
+
         first_char = stock.str[0].str.upper()
         df["Location"] = first_char.map({
             "D": "DC",
@@ -101,6 +104,12 @@ def load_data():
         }).fillna("Other")
     else:
         df["Location"] = "Unknown"
+        df["Stock Prefix"] = ""
+
+    if "Vehicle Status" in df.columns:
+        df["Vehicle Status"] = df["Vehicle Status"].replace({
+            "Starts": "Starts with Mechanical Issues"
+        })
 
     return df
 
@@ -447,7 +456,7 @@ vin_input = st.text_input("VIN", value="", key="filter_vin").strip().upper()
 
 base_df = df.copy()
 
-c1, c2, c3, c4, c5, c6 = st.columns(6)
+c1, c2, c3, c4, c5, c6, c7 = st.columns(7)
 
 with c1:
     location_options = safe_sorted_options(base_df["Location"], "Location") if "Location" in base_df.columns else []
@@ -458,6 +467,14 @@ if selected_locations:
     df_after_location = df_after_location[df_after_location["Location"].isin(selected_locations)]
 
 with c2:
+    stock_prefix_options = safe_sorted_options(df_after_location["Stock Prefix"], "Stock Prefix") if "Stock Prefix" in df_after_location.columns else []
+    selected_stock_prefixes = st.multiselect("Stock Prefix", stock_prefix_options, key="filter_stock_prefix")
+
+df_after_stock_prefix = df_after_location.copy()
+if selected_stock_prefixes:
+    df_after_stock_prefix = df_after_stock_prefix[df_after_stock_prefix["Stock Prefix"].isin(selected_stock_prefixes)]
+
+with c3:
     year_options = safe_sorted_options(df_after_location["Year"], "Year") if "Year" in df_after_location.columns else []
     selected_years = st.multiselect("Year", year_options, key="filter_year")
     handle_filter_change("filter_year")
@@ -467,7 +484,7 @@ if selected_years:
     selected_years_numeric = [pd.to_numeric(x, errors="coerce") for x in selected_years]
     df_after_year = df_after_year[df_after_year["Year"].isin(selected_years_numeric)]
 
-with c3:
+with c4:
     make_options = safe_sorted_options(df_after_year["Make"], "Make") if "Make" in df_after_year.columns else []
     selected_makes = st.multiselect("Make", make_options, key="filter_make")
     handle_filter_change("filter_make")
@@ -476,7 +493,7 @@ df_after_make = df_after_year.copy()
 if selected_makes:
     df_after_make = df_after_make[df_after_make["Make"].isin(selected_makes)]
 
-with c4:
+with c5:
     model_options = safe_sorted_options(df_after_make["Model"], "Model") if "Model" in df_after_make.columns else []
     selected_models = st.multiselect("Model", model_options, key="filter_model")
     handle_filter_change("filter_model")
@@ -485,7 +502,7 @@ df_after_model = df_after_make.copy()
 if selected_models:
     df_after_model = df_after_model[df_after_model["Model"].isin(selected_models)]
 
-with c5:
+with c6:
     trim_options = safe_sorted_options(df_after_model["Trim"], "Trim") if "Trim" in df_after_model.columns else []
     selected_trims = st.multiselect("Trim", trim_options, key="filter_trim")
     handle_filter_change("filter_trim")
@@ -494,7 +511,7 @@ df_after_trim = df_after_model.copy()
 if selected_trims:
     df_after_trim = df_after_trim[df_after_trim["Trim"].isin(selected_trims)]
 
-with c6:
+with c7:
     status_options = safe_sorted_options(df_after_trim["Vehicle Status"], "Vehicle Status") if "Vehicle Status" in df_after_trim.columns else []
     selected_statuses = st.multiselect("Vehicle Status", status_options, key="filter_status")
 
@@ -586,6 +603,9 @@ if vin_decoded:
 if selected_locations:
     filtered_df = filtered_df[filtered_df["Location"].isin(selected_locations)]
 
+if selected_stock_prefixes:
+    filtered_df = filtered_df[filtered_df["Stock Prefix"].isin(selected_stock_prefixes)]
+
 if selected_years:
     selected_years_numeric = [pd.to_numeric(x, errors="coerce") for x in selected_years]
     filtered_df = filtered_df[filtered_df["Year"].isin(selected_years_numeric)]
@@ -651,6 +671,7 @@ current_filter_state = {
     "price_start": st.session_state.get("filter_price_start", min_price) if "Sold Price" in df.columns and df["Sold Price"].notna().any() else None,
     "price_end": st.session_state.get("filter_price_end", max_price) if "Sold Price" in df.columns and df["Sold Price"].notna().any() else None,
     "date": tuple(st.session_state.get("filter_date", (min_date, max_date))) if "Date Sold" in df.columns and df["Date Sold"].notna().any() else (),
+    "stock_prefix": tuple(st.session_state.get("filter_stock_prefix", [])),
 }
 
 if "last_filter_state" not in st.session_state:
